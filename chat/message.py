@@ -14,6 +14,3 @@ class Message:
             message_dict[field] = values.get(field)
 
         return cls(**message_dict)
-
-    def __rich__(self) -> str:
-        pass

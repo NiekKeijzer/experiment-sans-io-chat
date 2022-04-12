@@ -3,21 +3,23 @@ from dataclasses import dataclass, field
 from typing import Generator
 
 from .message import Message
+from .middleware import MiddlewareStack
 from .protocol._abc import Protocol
 from .protocol.errors import ProtocolDecodeError
+from .server.chats import Hub, Channel
 
 
 @dataclass
 class Connection:
     protocol: Protocol
+    middleware: MiddlewareStack
     _in_buffer: bytearray = field(default_factory=bytearray)
     _out_buffer: bytearray = field(default_factory=bytearray)
 
     def handle_incoming(self, data: bytes):
         self._in_buffer.extend(data)
 
-        for message in self.messages:
-            self.handle_message(message)
+        return self.messages
 
     def outgoing(self) -> bytes:
         outgoing = bytes(self._out_buffer)
@@ -31,7 +33,7 @@ class Connection:
             try:
                 message = self.protocol.decode(self._in_buffer)
             except ProtocolDecodeError:
-                message = False
+                break
 
             if not message:
                 break
@@ -48,22 +50,22 @@ class Connection:
 
 @dataclass()
 class Client(Connection):
-    ...
-
-
-@dataclass()
-class _ServerClient(Connection):
+    channel: Channel = None
     alias: str = field(default_factory=uuid.uuid4)
 
     def handle_message(self, message: Message) -> None:
-        if message.message.strip() == 'ping':
-            self.send_message('pong', self.alias)
+        message = self.middleware(self, message)
+
+        if self.channel is not None:
+            self.channel.broadcast(message.message, self.alias)
 
 
 @dataclass
 class Server(Connection):
-    def handle_connection(self) -> _ServerClient:
-        # TODO: Keep track of clients somewhere
-        client = _ServerClient(self.protocol)
+    hub: Hub = field(default_factory=Hub)
+
+    def handle_connection(self) -> Client:
+        client = Client(self.protocol, self.middleware)
+        self.hub.join(client)
 
         return client

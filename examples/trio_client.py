@@ -1,21 +1,19 @@
 import trio
 from chat.connection import Client
+from chat.middleware import MiddlewareStack
 from chat.protocol.yolo import YoloProtocol
 
 
 async def main(host: str = '127.0.0.1', port=3331) -> None:
-    client = Client(YoloProtocol())
-    print('>>> ping')
+    client = Client(YoloProtocol(), MiddlewareStack())
+    print(f'>>> {client.alias}: ping')
     client.send_message('ping')
 
     stream = await trio.open_tcp_stream(host, port)
     await stream.send_all(client.outgoing())
     message = await stream.receive_some(1024)
-    client.handle_incoming(message)
-    async for message in stream:
-        print(f'<<< {message.decode()}')
-
-    print('hi')
+    for message in client.handle_incoming(message):
+        print(f'<<< {message.sender}: {message.message}')
 
 
 if __name__ == '__main__':
